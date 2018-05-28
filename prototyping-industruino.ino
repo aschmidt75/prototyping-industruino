@@ -1,5 +1,4 @@
 
-
 #include <Arduino.h>
 #include <SPI.h>
 
@@ -99,6 +98,72 @@ void setup_networking( bool b_lcd = true) {
   }
 }
 
+// -------------------------------------------------------------------------------------------
+// -- HTTP
+
+#include <ArduinoHttpServer.h>
+
+EthernetServer server(80);
+
+/* Maximum size of http requests. See also: https://github.com/QuickSander/ArduinoHttpServer */
+const size_t HTTP_STREAM_REQUEST_SIZE = 1024;
+
+
+void setup_http() {
+  server.begin();
+
+  lcd.setCursor(0,0);
+  lcd.print("HTTP active...");
+}
+
+void http_loop() {
+  EthernetClient client(server.available());
+  if ( client) {
+     if (client.connected()) {
+          ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE> httpRequest(client);
+
+          if (httpRequest.readRequest()) {
+             const String & uri = httpRequest.getResource().toString();
+
+             lcd.setCursor(0,1);
+             lcd.clearLine();
+             switch(httpRequest.getMethod()) {
+              case ArduinoHttpServer::MethodGet:
+                lcd.print("GET");
+                break;
+              case ArduinoHttpServer::MethodPut:
+                lcd.print("HEAD");
+                break;
+              case ArduinoHttpServer::MethodPost:
+                lcd.print("POST");
+                break;
+              case ArduinoHttpServer::MethodHead:
+                lcd.print("HEAD");
+                break;
+             }
+
+             lcd.setCursor(0,2);
+             lcd.clearLine();
+             lcd.print(uri);
+
+             lcd.setCursor(0,3);
+             lcd.clearLine();
+             const char *b = httpRequest.getBody();
+             if ( b && strlen(b) > 0) {
+               lcd.print(b);
+             }
+          }
+
+          ArduinoHttpServer::StreamHttpReply httpReply(client, "text/plain");
+          httpReply.send("OK");
+     }
+     client.stop();
+  }
+}
+
+// -------------------------------------------------------------------------------------------
+
+
 void setup() {
   SerialUSB.begin(115200);
 
@@ -116,7 +181,11 @@ void setup() {
   lcd.clear();
 
   setup_networking();
+
+  setup_http();
 }
 
 void loop() {
+  http_loop();
 }
+
