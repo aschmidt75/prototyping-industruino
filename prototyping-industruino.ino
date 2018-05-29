@@ -2,6 +2,13 @@
 #include <Arduino.h>
 #include <SPI.h>
 
+#include <ArduinoHttpServer.h>
+
+/* Maximum size of http requests. See also: https://github.com/QuickSander/ArduinoHttpServer */
+const size_t HTTP_STREAM_REQUEST_SIZE = 1024;
+
+const int HTTP_PORT = 80;
+
 // -------------------------------------------------------------------------------------------
 // -- LCD 
 #include <UC1701.h>
@@ -101,13 +108,7 @@ void setup_networking( bool b_lcd = true) {
 // -------------------------------------------------------------------------------------------
 // -- HTTP
 
-#include <ArduinoHttpServer.h>
-
-EthernetServer server(80);
-
-/* Maximum size of http requests. See also: https://github.com/QuickSander/ArduinoHttpServer */
-const size_t HTTP_STREAM_REQUEST_SIZE = 1024;
-
+EthernetServer server(HTTP_PORT);
 
 void setup_http() {
   server.begin();
@@ -116,48 +117,55 @@ void setup_http() {
   lcd.print("HTTP active...");
 }
 
+void http_process_request(EthernetClient& client, ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE>& httpRequest) {
+  const String & uri = httpRequest.getResource().toString();
+
+  lcd.setCursor(0,1);
+  lcd.clearLine();
+  switch(httpRequest.getMethod()) {
+  case ArduinoHttpServer::MethodGet:
+    lcd.print("GET");
+    break;
+  case ArduinoHttpServer::MethodPut:
+    lcd.print("PUT");
+    break;
+  case ArduinoHttpServer::MethodPost:
+    lcd.print("POST");
+    break;
+  case ArduinoHttpServer::MethodHead:
+    lcd.print("HEAD");
+    break;
+  }
+  
+  lcd.setCursor(0,2);
+  lcd.clearLine();
+  lcd.print(uri);
+  
+  lcd.setCursor(0,3);
+  lcd.clearLine();
+  const char *b = httpRequest.getBody();
+  if ( b && strlen(b) > 0) {
+   lcd.print(b);
+  }
+  
+  ArduinoHttpServer::StreamHttpReply httpReply(client, "text/plain");
+  httpReply.send("OK");
+}
+
 void http_loop() {
   EthernetClient client(server.available());
   if ( client) {
-     if (client.connected()) {
-          ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE> httpRequest(client);
-
-          if (httpRequest.readRequest()) {
-             const String & uri = httpRequest.getResource().toString();
-
-             lcd.setCursor(0,1);
-             lcd.clearLine();
-             switch(httpRequest.getMethod()) {
-              case ArduinoHttpServer::MethodGet:
-                lcd.print("GET");
-                break;
-              case ArduinoHttpServer::MethodPut:
-                lcd.print("HEAD");
-                break;
-              case ArduinoHttpServer::MethodPost:
-                lcd.print("POST");
-                break;
-              case ArduinoHttpServer::MethodHead:
-                lcd.print("HEAD");
-                break;
-             }
-
-             lcd.setCursor(0,2);
-             lcd.clearLine();
-             lcd.print(uri);
-
-             lcd.setCursor(0,3);
-             lcd.clearLine();
-             const char *b = httpRequest.getBody();
-             if ( b && strlen(b) > 0) {
-               lcd.print(b);
-             }
-          }
-
-          ArduinoHttpServer::StreamHttpReply httpReply(client, "text/plain");
-          httpReply.send("OK");
-     }
-     client.stop();
+    if ( client.connected()) {
+      ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE> httpRequest(client);
+      
+      if (httpRequest.readRequest()) {
+        http_process_request(client, httpRequest);
+      } else {
+        ArduinoHttpServer::StreamHttpErrorReply httpReply(client, httpRequest.getContentType());
+        httpReply.send(httpRequest.getErrorDescrition());
+      }
+      client.stop();
+    }
   }
 }
 
