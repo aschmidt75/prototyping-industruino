@@ -106,6 +106,65 @@ void setup_networking( bool b_lcd = true) {
 }
 
 // -------------------------------------------------------------------------------------------
+// -- JSON
+
+#include <ArduinoJson.h>
+
+long example_value = 0;
+
+void json_serialize_example(String& str) {
+  // construct a simple json document
+  ArduinoJson::StaticJsonBuffer<64> buf;
+  ArduinoJson::JsonObject& resp = buf.createObject();
+  resp["value"] = example_value;
+
+  resp.printTo(str);  
+}
+
+bool json_deserialize_example(const char *str) {
+  // parse json document from string
+  ArduinoJson::StaticJsonBuffer<128> buf;
+  ArduinoJson::JsonObject& root = buf.parseObject(str);
+  
+  if (!root.success()) {
+    return false;
+  }
+
+  // update value
+  if (root.containsKey("value") && root.is<long>("value")) {
+    example_value = root["value"];
+
+    return true;
+  }
+
+  return false;
+}
+
+void http_json_get_example(EthernetClient& client, ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE>& httpRequest) {
+  String str;
+  json_serialize_example(str);
+  
+  ArduinoHttpServer::StreamHttpReply httpReply(client, "application/json");
+  httpReply.send(str);
+}
+
+void http_json_put_example(EthernetClient& client, ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE>& httpRequest) {
+    if (json_deserialize_example(httpRequest.getBody()) == false) {  
+      ArduinoHttpServer::StreamHttpErrorReply httpReply(client, "text/plain", "406");
+      httpReply.send("not acceptable");
+
+      return;
+  }
+
+  String str;
+  json_serialize_example(str);
+  
+  ArduinoHttpServer::StreamHttpReply httpReply(client, "application/json");
+  httpReply.send(str);
+
+}
+
+// -------------------------------------------------------------------------------------------
 // -- HTTP
 
 EthernetServer server(HTTP_PORT);
@@ -117,7 +176,8 @@ void setup_http() {
   lcd.print("HTTP active...");
 }
 
-void http_process_request(EthernetClient& client, ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE>& httpRequest) {
+void http_display_request(ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE>& httpRequest) {
+  // display req.
   const String & uri = httpRequest.getResource().toString();
 
   lcd.setCursor(0,1);
@@ -147,9 +207,24 @@ void http_process_request(EthernetClient& client, ArduinoHttpServer::StreamHttpR
   if ( b && strlen(b) > 0) {
    lcd.print(b);
   }
-  
-  ArduinoHttpServer::StreamHttpReply httpReply(client, "text/plain");
-  httpReply.send("OK");
+}
+
+void http_process_request(EthernetClient& client, ArduinoHttpServer::StreamHttpRequest<HTTP_STREAM_REQUEST_SIZE>& httpRequest) {
+
+  http_display_request(httpRequest);
+
+  if (httpRequest.getMethod() == ArduinoHttpServer::MethodGet && httpRequest.getResource()[0] == "example") {
+    http_json_get_example(client, httpRequest);
+    return;
+  }
+  if (httpRequest.getMethod() == ArduinoHttpServer::MethodPut && httpRequest.getResource()[0] == "example") {
+    http_json_put_example(client, httpRequest);
+    return;
+  }
+
+  // 
+  ArduinoHttpServer::StreamHttpErrorReply httpReply(client, "text/plain", "404");
+  httpReply.send("not found");
 }
 
 void http_loop() {
